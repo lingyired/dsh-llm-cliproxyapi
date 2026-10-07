@@ -1,0 +1,18 @@
+{
+  "name": "dsh-llm-cliproxyapi",
+  "version": "0.1.0",
+  "description": "CLIProxyAPI provider routes for dsh: Codex over ChatGPT OAuth (native Responses protocol, with its real reasoning levels) plus the local CLIProxyAPI WorkBuddy routes",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

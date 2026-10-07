@@ -1,0 +1,179 @@
+# dsh-llm-cliproxyapi — CLIProxyAPI provider routes for @deepseek-ai/dsh-llm-pi-ai.
+#
+# Layer order in a profile is: bundles (in dsh.profile.bundles order), then the
+# profile's own cordis.patch.yml, then the home patch ($DSH_HOME/cordis.patch.yml).
+# A later layer REPLACES an earlier layer's `config` for the same row id, so this
+# whole providers block must stay in one layer: splitting it would drop routes.
+#
+# `cliproxyapi-codex` speaks the native Responses protocol on purpose. Running
+# Codex models through the `cliproxyapi` (openai-completions) route would send
+# them through a translation layer that drops the encrypted reasoning payload
+# the Codex backend round-trips across turns.
+#
+# `reasoningEfforts` declares the levels each model accepts upstream, taken from
+# CLIProxyAPI's client-facing catalogue — the `codex-plus` section of
+# `models.json`, which is what `/v1/models` serves. `gpt-6.1-sol` is absent from
+# `codex_client_models.json`, so that file is not the reference for it.
+# Undeclared levels become UNAVAILABLE rather than defaulting, so every wanted
+# level is listed explicitly; `off`/`minimal` are deliberately absent because
+# the Codex backend has no true "off".
+#
+# The `>>> workbuddy-models` markers are owned by CLIProxyAPI's expiry-router
+# plugin, which rewrites that region from its panel selection. It needs the
+# file at the plugin's configured `dsh_patch_path`.
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      token-unlimited:
+        displayName: token-unlimited.com
+        apiKeyEnv: TOKEN_UNLIMITED_API_KEY
+        api: openai-responses
+        baseURL: https://token-unlimited.com/v1
+        models:
+          - id: gpt-6-luna
+            name: gpt-6-luna
+            input:
+              - text
+              - image
+          - id: gpt-6-sol
+            name: gpt-6-sol
+            input:
+              - text
+              - image
+      cliproxyapi:
+        displayName: CPA · WorkBuddy
+        apiKeyEnv: CLIPROXYAPI_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8317/v1
+        # Route-level starting effort: the level a session uses until it picks
+        # one (the picker then saves that choice per session). Set to `high`
+        # because WorkBuddy's `deepseek-v4.1-flash` runs at a fixed
+        # `{"effort": "high"}` upstream and ignores every `reasoning_effort`
+        # sent, so the only honest default is the level it already runs at.
+        # A model on this route that cannot take `high` simply describes as
+        # "provider default" instead of failing; an explicit request for an
+        # unsupported level is still refused as UNSUPPORTED_REASONING_EFFORT.
+        reasoning: high
+        models:
+          # The plugin owns this region in the LIVE file it writes
+          # (plugins.configs.expiry-router.dsh_patch_path) and prefixes each name
+          # with dsh_model_prefix ("CPA · W· "). This copy is hand-maintained, so
+          # keep the same prefix here or a bundle-based recovery would show
+          # unprefixed names.
+          # >>> workbuddy-models:start
+          - id: hy3
+            name: "CPA · W· Hy3 (hy3) · 0.00x · 限时免费"
+            contextWindow: 192000
+            maxTokens: 64000
+            reasoningEfforts:
+              high: high
+            input:
+              - text
+              - image
+          - id: glm-5.3-flash
+            name: "CPA · W· GLM-5.3-Flash · 0.06x"
+            contextWindow: 1000000
+            maxTokens: 131072
+            reasoningEfforts:
+              low: low
+              high: high
+              max: max
+            input:
+              - text
+              - image
+          - id: deepseek-v4.1-flash
+            name: "CPA · W· Deepseek-V4.1-Flash · 0.11x"
+            contextWindow: 1000000
+            maxTokens: 128000
+            reasoningEfforts:
+              high: high
+            input:
+              - text
+              - image
+          # <<< workbuddy-models:end
+      cliproxyapi-codex:
+        displayName: CPA · Codex
+        apiKeyEnv: CLIPROXYAPI_API_KEY
+        api: openai-responses
+        baseURL: http://127.0.0.1:8317/v1
+        models:
+          - id: gpt-6.1-sol
+            name: CPA · C· GPT-6.1-Sol
+            contextWindow: 272000
+            maxTokens: 128000
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+              max: max
+            input:
+              - text
+              - image
+          - id: gpt-6-luna
+            name: CPA · C· GPT-6-Luna
+            contextWindow: 272000
+            maxTokens: 128000
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+              max: max
+            input:
+              - text
+              - image
+      # Trae is deliberately a SEPARATE route on its own model id.
+      # CPA publishes Trae's deepseek-v4.1-flash as `trae-ds4.1-flash`
+      # (oauth-model-alias.trae in CPA's config.yaml, no fork), so the two
+      # providers share no model id at all and CPA can never switch a request
+      # between them — account switching across platforms is the risk we are
+      # avoiding. `deepseek-v4.1-flash` above is therefore WorkBuddy-only.
+      cliproxyapi-trae:
+        displayName: CPA · Trae
+        apiKeyEnv: CLIPROXYAPI_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8317/v1
+        models:
+          # Name follows the WorkBuddy convention (display name · rate), but the
+          # rate is a RANGE because Trae bills this model at two prices on a
+          # daily clock: 0.06x during the off-peak windows (00:00-08:00 and
+          # 22:00-24:00, every day) and 0.13x in between. Both come from
+          # display_contact_config (consumption_rate + activity_discount
+          # .off_peak.time_windows); read them live via
+          # GET /v0/management/plugins/trae/catalog_raw. A single number would
+          # be wrong for 14 hours a day.
+          # Context is the catalogue's context_window_tokens.dev.
+          - id: trae-ds4.1-flash
+            name: CPA · T· DeepSeek-V4.1-Flash · 0.06~0.13x
+            contextWindow: 200000
+            maxTokens: 32000
+            input:
+              - text
+      # Qoder is a SEPARATE route on its own model id, for the same reason as
+      # Trae: CPA's config.yaml renames `qfmodel` to `qoder-qwen3.8-flash`
+      # (oauth-model-alias.qoder, no fork) and hides every other Qoder model
+      # (oauth-excluded-models.qoder), so this route can only ever reach
+      # Qwen3.8-Flash on a Qoder account and shares no id with WorkBuddy.
+      cliproxyapi-qoder:
+        displayName: CPA · Qoder
+        apiKeyEnv: CLIPROXYAPI_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8317/v1
+        models:
+          # Qwen3.8-Flash is an official limited-time free model (until
+          # 2026-10), hence the 0.00x rate. Context/output caps are CPA's
+          # catalogue values for qfmodel (180000 / 8192).
+          # No `reasoningEfforts` on purpose: the Qoder plugin turns thinking on
+          # for every request (is_reasoning + source "system") and forwards
+          # `reasoning_effort` only when the upstream catalogue advertises that
+          # level for the model. Declaring a level here that qfmodel does not
+          # advertise would show a selector that silently does nothing, so the
+          # dial is left on the upstream default.
+          - id: qoder-qwen3.8-flash
+            name: CPA · Q· Qwen3.8-Flash · 0.00x · 限时免费
+            contextWindow: 180000
+            maxTokens: 8192
+            input:
+              - text
